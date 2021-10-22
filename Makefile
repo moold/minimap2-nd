@@ -1,5 +1,5 @@
-CFLAGS=		-g -Wall -O2 -Wc++-compat #-Wextra
-CPPFLAGS=	-DHAVE_KALLOC
+CFLAGS=		-g -Wall -O2 -Wc++-compat #-Wextra 
+CPPFLAGS=	-DHAVE_KALLOC -fPIC
 INCLUDES=
 OBJS=		kthread.o kalloc.o misc.o bseq.o sketch.o sdust.o options.o index.o \
 			lchain.o align.o hit.o seed.o map.o format.o pe.o esterr.o splitidx.o \
