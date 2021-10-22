@@ -138,6 +138,25 @@ int mm_write_sam_hdr(const mm_idx_t *idx, const char *rg, const char *ver, int a
 	return ret;
 }
 
+char *get_sam_hdr(const mm_idx_t *idx, const char *rg, const char *ver, char *options)
+{
+	kstring_t str = {0,0,0};
+	if (idx) {
+		uint32_t i;
+		for (i = 0; i < idx->n_seq; ++i)
+			mm_sprintf_lite(&str, "@SQ\tSN:%s\tLN:%d\n", idx->seq[i].name, idx->seq[i].len);
+	}
+	if (rg) sam_write_rg_line(&str, rg);
+	mm_sprintf_lite(&str, "@PG\tID:minimap2\tPN:minimap2");
+	if (ver) mm_sprintf_lite(&str, "\tVN:%s", ver);
+	if (options) mm_sprintf_lite(&str, "\tOP:%s", options);
+	return str.s;
+}
+
+void destroy_sam_hdr(char *s){
+	free (s);
+}
+
 static void write_cs_core(kstring_t *s, const uint8_t *tseq, const uint8_t *qseq, const mm_reg1_t *r, char *tmp, int no_iden, int write_tag)
 {
 	int i, q_off, t_off;
@@ -307,7 +326,7 @@ static inline void write_tags(kstring_t *s, const mm_reg1_t *r)
 
 void mm_write_paf3(kstring_t *s, const mm_idx_t *mi, const mm_bseq1_t *t, const mm_reg1_t *r, void *km, int opt_flag, int rep_len)
 {
-	s->l = 0;
+	//s->l = 0;
 	if (r == 0) {
 		mm_sprintf_lite(s, "%s\t%d\t0\t0\t*\t*\t0\t0\t0\t0\t0\t0", t->name, t->l_seq);
 		if (rep_len >= 0) mm_sprintf_lite(s, "\trl:i:%d", rep_len);
@@ -412,7 +431,7 @@ void mm_write_sam3(kstring_t *s, const mm_idx_t *mi, const mm_bseq1_t *t, int se
 	} else r_prev = r_next = NULL;
 
 	// write QNAME
-	s->l = 0;
+	// s->l = 0;
 	mm_sprintf_lite(s, "%s", t->name);
 	if (n_seg > 1) s->l = mm_qname_len(t->name); // trim the suffix like /1 or /2
 

@@ -308,7 +308,7 @@ int main(int argc, char *argv[])
 		fprintf(fp_help, "Options:\n");
 		fprintf(fp_help, "  Indexing:\n");
 		fprintf(fp_help, "    -H           use homopolymer-compressed k-mer (preferrable for PacBio)\n");
-		fprintf(fp_help, "    -k INT       k-mer size (no larger than 28) [%d]\n", ipt.k);
+		fprintf(fp_help, "    -k INT       k-mer size (no larger than 128) [%d]\n", ipt.k);
 		fprintf(fp_help, "    -w INT       minimizer window size [%d]\n", ipt.w);
 		fprintf(fp_help, "    -I NUM       split index for every ~NUM input bases [4G]\n");
 		fprintf(fp_help, "    -d FILE      dump index to FILE []\n");
@@ -350,7 +350,7 @@ int main(int argc, char *argv[])
 		fprintf(fp_help, "    -x STR       preset (always applied before other options; see minimap2.1 for details) []\n");
 		fprintf(fp_help, "                 - map-pb/map-ont - PacBio CLR/Nanopore vs reference mapping\n");
 		fprintf(fp_help, "                 - map-hifi - PacBio HiFi reads vs reference mapping\n");
-		fprintf(fp_help, "                 - ava-pb/ava-ont - PacBio/Nanopore read overlap\n");
+		fprintf(fp_help, "                 - ava-pb/ava-ont/ava-hifi - PacBio/Nanopore/hifi read overlap\n");
 		fprintf(fp_help, "                 - asm5/asm10/asm20 - asm-to-ref mapping, for ~0.1/1/5%% sequence divergence\n");
 		fprintf(fp_help, "                 - splice/splice:hq - long-read/Pacbio-CCS spliced alignment\n");
 		fprintf(fp_help, "                 - sr - genomic short-read mapping\n");

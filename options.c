@@ -55,6 +55,8 @@ void mm_mapopt_init(mm_mapopt_t *opt)
 
 	opt->pe_ori = 0; // FF
 	opt->pe_bonus = 33;
+
+	opt->n_threads = 3;
 }
 
 void mm_mapopt_update(mm_mapopt_t *opt, const mm_idx_t *mi)
@@ -95,6 +97,22 @@ int mm_set_opt(const char *preset, mm_idxopt_t *io, mm_mapopt_t *mo)
 	} else if (strcmp(preset, "ava-pb") == 0) {
 		io->flag |= MM_I_HPC, io->k = 19, io->w = 5;
 		mo->flag |= MM_F_ALL_CHAINS | MM_F_NO_DIAG | MM_F_NO_DUAL | MM_F_NO_LJOIN;
+		mo->min_chain_score = 100, mo->pri_ratio = 0.0f, mo->max_chain_skip = 25;
+		mo->bw_long = mo->bw;
+		mo->occ_dist = 0;
+	}else if (strcmp(preset, "ava-hifi") == 0){
+		io->flag = 0, io->k = 51, io->w = 51;
+		io->flag |= MM_I_HPC;
+		mo->flag |= MM_F_ALL_CHAINS | MM_F_NO_DIAG | MM_F_NO_DUAL | MM_F_NO_LJOIN;
+		mo->a = 1, mo->b = 19, mo->q = 39, mo->q2 = 81, mo->e = 3, mo->e2 = 1, mo->zdrop = mo->zdrop_inv = 200;
+		mo->min_dp_max = 200;
+		mo->mid_occ = 1000;
+		mo->min_cnt = 40;
+	}else if (strcmp(preset, "ava-hifi2") == 0){
+		io->flag = 0, io->k = 51, io->w = 51;
+		mo->flag |= MM_F_ALL_CHAINS | MM_F_NO_DIAG | MM_F_NO_DUAL | MM_F_NO_LJOIN;
+		mo->max_gap = 10000;
+		mo->a = 1, mo->b = 4, mo->q = 6, mo->q2 = 26, mo->e = 2, mo->e2 = 1, mo->zdrop = mo->zdrop_inv = 200;
 		mo->min_chain_score = 100, mo->pri_ratio = 0.0f, mo->max_chain_skip = 25;
 		mo->bw_long = mo->bw;
 		mo->occ_dist = 0;

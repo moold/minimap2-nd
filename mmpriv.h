@@ -109,6 +109,10 @@ void mm_err_puts(const char *str);
 void mm_err_fwrite(const void *p, size_t size, size_t nitems, FILE *fp);
 void mm_err_fread(void *p, size_t size, size_t nitems, FILE *fp);
 
+
+
+char *get_sam_hdr(const mm_idx_t *idx, const char *rg, const char *ver, char *options);
+void destroy_sam_hdr(char *s);
 #ifdef __cplusplus
 }
 #endif

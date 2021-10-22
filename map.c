@@ -566,14 +566,20 @@ static void *worker_pipeline(void *shared, int step, void *in)
 							mm_write_sam3(&p->str, mi, t, i - seg_st, j, s->n_seg[k], &s->n_reg[seg_st], (const mm_reg1_t*const*)&s->reg[seg_st], km, p->opt->flag, s->rep_len[i]);
 						else
 							mm_write_paf3(&p->str, mi, t, r, km, p->opt->flag, s->rep_len[i]);
-						mm_err_puts(p->str.s);
+						if (!p->opt->py_mode){
+							mm_err_puts(p->str.s);
+							p->str.l = 0;
+						}else p->str.s[p->str.l++] = '\n';
 					}
 				} else if ((p->opt->flag & MM_F_PAF_NO_HIT) || ((p->opt->flag & MM_F_OUT_SAM) && !(p->opt->flag & MM_F_SAM_HIT_ONLY))) { // output an empty hit, if requested
 					if (p->opt->flag & MM_F_OUT_SAM)
 						mm_write_sam3(&p->str, mi, t, i - seg_st, -1, s->n_seg[k], &s->n_reg[seg_st], (const mm_reg1_t*const*)&s->reg[seg_st], km, p->opt->flag, s->rep_len[i]);
 					else
 						mm_write_paf3(&p->str, mi, t, 0, 0, p->opt->flag, s->rep_len[i]);
-					mm_err_puts(p->str.s);
+					if (!p->opt->py_mode){
+						mm_err_puts(p->str.s);
+						p->str.l = 0;
+					}else p->str.s[p->str.l++] = '\n';
 				}
 			}
 			for (i = seg_st; i < seg_en; ++i) {
@@ -611,7 +617,7 @@ static mm_bseq_file_t **open_bseqs(int n, const char **fn)
 	return fp;
 }
 
-int mm_map_file_frag(const mm_idx_t *idx, int n_segs, const char **fn, const mm_mapopt_t *opt, int n_threads)
+int mm_map_file_frag(const mm_idx_t *idx, int n_segs, const char **fn, mm_mapopt_t *opt, int n_threads)
 {
 	int i, pl_threads;
 	pipeline_t pl;
@@ -628,7 +634,10 @@ int mm_map_file_frag(const mm_idx_t *idx, int n_segs, const char **fn, const mm_
 	pl_threads = n_threads == 1? 1 : (opt->flag&MM_F_2_IO_THREADS)? 3 : 2;
 	kt_pipeline(pl_threads, worker_pipeline, &pl, 3);
 
-	free(pl.str.s);
+	if (opt->py_mode && pl.str.l) {
+		pl.str.s[pl.str.l--] = '\0';
+		opt->out = pl.str.s;
+	}else free(pl.str.s);
 	if (pl.fp_split) fclose(pl.fp_split);
 	for (i = 0; i < pl.n_fp; ++i)
 		mm_bseq_close(pl.fp[i]);
@@ -636,7 +645,7 @@ int mm_map_file_frag(const mm_idx_t *idx, int n_segs, const char **fn, const mm_
 	return 0;
 }
 
-int mm_map_file(const mm_idx_t *idx, const char *fn, const mm_mapopt_t *opt, int n_threads)
+int mm_map_file(const mm_idx_t *idx, const char *fn, mm_mapopt_t *opt, int n_threads)
 {
 	return mm_map_file_frag(idx, 1, &fn, opt, n_threads);
 }

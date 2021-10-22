@@ -105,6 +105,9 @@ typedef struct {
 	short k, w, flag, bucket_bits;
 	int64_t mini_batch_size;
 	uint64_t batch_size;
+
+	char *junc_bed;
+	char *alt_list;
 } mm_idxopt_t;
 
 typedef struct {
@@ -153,6 +156,10 @@ typedef struct {
 	int64_t max_sw_mat;
 
 	const char *split_prefix;
+
+	int n_threads;
+	int py_mode;
+	char *out;
 } mm_mapopt_t;
 
 // index reader
@@ -349,9 +356,9 @@ void mm_map_frag(const mm_idx_t *mi, int n_segs, const int *qlens, const char **
  *
  * @return 0 on success; -1 if _fn_ can't be read
  */
-int mm_map_file(const mm_idx_t *idx, const char *fn, const mm_mapopt_t *opt, int n_threads);
+int mm_map_file(const mm_idx_t *idx, const char *fn, mm_mapopt_t *opt, int n_threads);
 
-int mm_map_file_frag(const mm_idx_t *idx, int n_segs, const char **fn, const mm_mapopt_t *opt, int n_threads);
+int mm_map_file_frag(const mm_idx_t *idx, int n_segs, const char **fn, mm_mapopt_t *opt, int n_threads);
 
 /**
  * Generate the cs tag (new in 2.12)
