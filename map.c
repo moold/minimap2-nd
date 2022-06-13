@@ -9,7 +9,179 @@
 #include "mmpriv.h"
 #include "bseq.h"
 #include "khash.h"
+#include "../NextDenovo-Pro/lib/align.h"
 
+static inline void nd_update_coors(mm_reg1_t *r, int32_t qlen, const mm128_t *a) 
+{ 
+	int32_t k = r->as, q_span = (int32_t)(a[k].y>>32&0xff);
+	r->rs = (int32_t)a[k].x + 1 > q_span? (int32_t)a[k].x + 1 - q_span : 0; 
+	r->re = (int32_t)a[k + r->cnt - 1].x + 1;
+	if (!r->rev) {
+		r->qs = (int32_t)a[k].y + 1 - q_span;
+		r->qe = (int32_t)a[k + r->cnt - 1].y + 1;
+	} else {
+		r->qs = qlen - ((int32_t)a[k + r->cnt - 1].y + 1); 
+		r->qe = qlen - ((int32_t)a[k].y + 1 - q_span);
+	}   
+}
+
+static int nd_fix_bad_ends(mm_reg1_t *r, const mm128_t *a, int bw, int min_match)
+{
+	int32_t i, l, m;
+	int32_t as = r->as;
+	int32_t cnt = r->cnt;
+	if (r->cnt < 3) return 0;
+	m = l = a[r->as].y >> 32 & 0xff;//q_span
+	for (i = r->as + 1; i < r->as + r->cnt - 1; ++i) {
+		int32_t lq, lr, min, max;
+		int32_t q_span = a[i].y >> 32 & 0xff;
+		if (a[i].y & MM_SEED_LONG_JOIN) break;
+		lr = (int32_t)a[i].x - (int32_t)a[i-1].x;
+		lq = (int32_t)a[i].y - (int32_t)a[i-1].y;
+		min = lr < lq? lr : lq;
+		max = lr > lq? lr : lq;
+		if (max - min > l >> 1) as = i;
+		l += min;
+		m += min < q_span? min : q_span;
+		if (l >= bw << 1 || (m >= min_match && m >= bw) || m >= r->mlen >> 1) break;
+	}
+	cnt = r->as + r->cnt - as;
+	m = l = a[r->as + r->cnt - 1].y >> 32 & 0xff;
+	for (i = r->as + r->cnt - 2; i > as; --i) {
+		int32_t lq, lr, min, max;
+		int32_t q_span = a[i+1].y >> 32 & 0xff;
+		if (a[i+1].y & MM_SEED_LONG_JOIN) break;
+		lr = (int32_t)a[i+1].x - (int32_t)a[i].x;
+		lq = (int32_t)a[i+1].y - (int32_t)a[i].y;
+		min = lr < lq? lr : lq;
+		max = lr > lq? lr : lq;
+		if (max - min > l >> 1) cnt = i + 1 - as;
+		l += min;
+		m += min < q_span? min : q_span;
+		if (l >= bw << 1 || (m >= min_match && m >= bw) || m >= r->mlen >> 1) break;
+	}
+	int ret = r->as != as || r->cnt != cnt ? 1 : 0;
+	r->as = as;
+	r->cnt = cnt;
+	return ret;
+}
+
+int nd_idx_getbseq(const mm_idx_t *mi, uint32_t rid, uint32_t st, uint32_t en, char *seq, int rev)
+{	
+	uint64_t i, st1, en1;
+	if (rid >= mi->n_seq || st >= mi->seq[rid].len) return -1; 
+	if (en > mi->seq[rid].len) en = mi->seq[rid].len;
+	st1 = mi->seq[rid].offset + st; 
+	en1 = mi->seq[rid].offset + en;
+	if (rev){
+		for (i = st1; i < en1; ++i)
+			seq[en1 - 1 - i] = "TGCA"[mm_seq4_get(mi->S, i)];
+	}else{
+		for (i = st1; i < en1; ++i)
+			seq[i - st1] = "ACGT"[mm_seq4_get(mi->S, i)];
+	}
+
+	seq[i - st1] = '\0';
+	return en - st;
+}
+
+static void nd_extend_ends(const mm_mapopt_t *opt, const mm_idx_t *mi, void *km, int qlen, 
+	const char *seq, int *n_regs, mm_reg1_t *regs, int *V, uint8_t **D, int max_mem_d, char *skip_name){
+	
+	int i;
+	int min_clen = 10;
+	int max_tseq_len = qlen * 2;
+	char *tseq = (char*)kmalloc(km, max_tseq_len);
+	int32_t bstx, bsty, max_d, band_size, minlen;
+
+	for (i = 0; i < *n_regs; ++i) {
+		mm_reg1_t *r = &regs[i];
+		if (skip_name && strcmp(skip_name, mi->seq[r->rid].name) == 0) continue;
+
+		if (mi->seq[r->rid].len >= max_tseq_len){
+			max_tseq_len = mi->seq[r->rid].len;
+			tseq = (char*)krealloc(km, tseq, max_tseq_len);
+		}
+		// NB:should already called nd_fix_bad_ends && nd_update_coors
+		// int ret = nd_fix_bad_ends(r, a, opt->bw, opt->min_chain_score * 2);
+		// if (ret) nd_update_coors(r, qlen, a);
+		if (r->rev == 0){
+			int subtlen = r->rs;
+			int subqlen = r->qs;
+			minlen = subtlen > subqlen ? subqlen : subtlen;
+			if (minlen >= min_clen){
+				clean_V(V, max_mem_d);
+				max_d = minlen/4 > max_mem_d ? max_mem_d : (minlen > 20 ? minlen/4 : minlen);
+				band_size = 500;//max_d/3 > 500 ? 500 : max_d/3;//500;TODO: check
+				if (subtlen > (minlen << 1)){//only extract partial un-aligned bseqs
+					subtlen = minlen << 1;
+					nd_idx_getbseq(mi, r->rid, r->rs - (minlen << 1), r->rs, tseq, 0);
+				}else{
+					nd_idx_getbseq(mi, r->rid, 0, r->rs, tseq, 0);
+				}
+				extend_rev(seq, subqlen, tseq, subtlen, V, D, max_d, band_size, opt->ext, &bstx, &bsty);
+				r->qs -= bstx;
+				r->rs -= bsty;
+			}
+
+			subtlen = mi->seq[r->rid].len - r->re;
+			subqlen = qlen - r->qe;
+			minlen = subtlen > subqlen ? subqlen : subtlen;
+			if (minlen >= min_clen){
+				clean_V(V, max_mem_d);
+				max_d = minlen/4 > max_mem_d ? max_mem_d : (minlen > 20 ? minlen/4 : minlen);
+				band_size = 500;//max_d/3 > 500 ? 500 : max_d/3;//500;
+				if (subtlen > (minlen << 1)){//only extract partial un-aligned bseqs
+					subtlen = minlen << 1;
+					nd_idx_getbseq(mi, r->rid, r->re, r->re + (minlen << 1), tseq, 0);
+				}else{
+					nd_idx_getbseq(mi, r->rid, r->re, mi->seq[r->rid].len, tseq, 0);
+				}
+				extend_fwd(seq + r->qe, subqlen, tseq, subtlen, V, D, max_d, band_size, opt->ext, &bstx, &bsty);
+				r->qe += bstx;
+				r->re += bsty;
+			}
+		}else{
+			int subtlen = mi->seq[r->rid].len - r->re;
+			int subqlen = r->qs;
+			minlen = subtlen > subqlen ? subqlen : subtlen;
+			if (minlen >= min_clen){
+				clean_V(V, max_mem_d);
+				max_d = minlen/4 > max_mem_d ? max_mem_d : (minlen > 20 ? minlen/4 : minlen);
+				band_size = 500;//max_d/3 > 500 ? 500 : max_d/3;//500;
+				if (subtlen > (minlen << 1)){//only extract partial un-aligned bseqs
+					subtlen = minlen << 1;
+					nd_idx_getbseq(mi, r->rid, r->re, r->re + (minlen << 1), tseq, 1);
+				}else{
+					nd_idx_getbseq(mi, r->rid, r->re, mi->seq[r->rid].len, tseq, 1);
+				}
+				extend_rev(seq, subqlen, tseq, subtlen, V, D, max_d, band_size, opt->ext, &bstx, &bsty);
+				r->qs -= bstx;
+				r->re += bsty;
+			}
+
+			subtlen = r->rs;
+			subqlen = qlen - r->qe;
+			minlen = subtlen > subqlen ? subqlen : subtlen;
+			if (minlen >= min_clen){
+				clean_V(V, max_mem_d);
+				max_d = minlen/4 > max_mem_d ? max_mem_d : (minlen > 20 ? minlen/4 : minlen);
+				band_size = 500;//max_d/3 > 500 ? 500 : max_d/3;//500;
+				if (subtlen > (minlen << 1)){//only extract partial un-aligned bseqs
+					subtlen = minlen << 1;
+					nd_idx_getbseq(mi, r->rid, r->rs - (minlen << 1), r->rs, tseq, 1);
+				}else{
+					nd_idx_getbseq(mi, r->rid, 0, r->rs, tseq, 1);
+				}
+				extend_fwd(seq + r->qe, subqlen, tseq, subtlen, V, D, max_d, band_size, opt->ext, &bstx, &bsty);
+				r->qe += bstx;
+				r->rs -= bsty;
+			}
+		}
+	}
+	kfree (km, tseq);
+}
+////////////////////////////////END/////////////////////////
 struct mm_tbuf_s {
 	void *km;
 	int rep_len, frag_gap;
@@ -219,7 +391,17 @@ static void chain_post(const mm_mapopt_t *opt, int max_chain_gap_ref, const mm_i
 
 static mm_reg1_t *align_regs(const mm_mapopt_t *opt, const mm_idx_t *mi, void *km, int qlen, const char *seq, int *n_regs, mm_reg1_t *regs, mm128_t *a)
 {
-	if (!(opt->flag & MM_F_CIGAR)) return regs;
+	if (!(opt->flag & MM_F_CIGAR)) {
+		if (opt->ext > 0){
+			int i;
+			for (i = 0; i < *n_regs; ++i) {
+				mm_reg1_t *r = &regs[i];
+				int ret = nd_fix_bad_ends(r, a, opt->bw, opt->min_chain_score * 2);
+				if (ret) nd_update_coors(r, qlen, a);
+			}
+		}
+		return regs;
+	}
 	regs = mm_align_skeleton(km, opt, mi, qlen, seq, n_regs, regs, a); // this calls mm_filter_regs()
 	if (!(opt->flag & MM_F_ALL_CHAINS)) { // don't choose primary mapping(s)
 		mm_set_parent(km, opt->mask_level, opt->mask_len, *n_regs, regs, opt->a * 2 + opt->b, opt->flag&MM_F_HARD_MLEVEL, opt->alt_drop);
@@ -409,6 +591,8 @@ typedef struct {
 	int *n_reg, *seg_off, *n_seg, *rep_len, *frag_gap;
 	mm_reg1_t **reg;
 	mm_tbuf_t **buf;
+	int **V;
+	uint8_t ***D;
 } step_t;
 
 static void worker_for(void *_data, long i, int tid) // kt_for() callback
@@ -454,6 +638,15 @@ static void worker_for(void *_data, long i, int tid) // kt_for() callback
 				r->rev = !r->rev;
 			}
 		}
+
+	if (s->p->opt->ext > 0 && !(s->p->opt->flag & MM_F_CIGAR)){
+		assert (s->n_seg[i] == 1);
+		mm_bseq1_t *t = &s->seq[off];
+		str_toupper(t->seq);
+		nd_extend_ends(s->p->opt, s->p->mi, b->km, t->l_seq, t->seq, &s->n_reg[off], 
+			s->reg[off], s->V[tid], s->D[tid], s->p->opt->ide_ml, t->name);
+	}
+
 	if (mm_dbg_flag & MM_DBG_PRINT_QNAME)
 		fprintf(stderr, "QT\t%s\t%d\t%.6f\n", s->seq[off].name, tid, realtime() - t);
 }
@@ -554,6 +747,16 @@ static void *worker_pipeline(void *shared, int step, void *in)
 					s->seg_off[s->n_frag++] = j;
 					j = i;
 				}
+			
+			if (s->p->opt->ext > 0){
+				s->V = (int **) malloc(p->n_threads * sizeof(int *));
+				s->D = (uint8_t ***) malloc(p->n_threads * sizeof(uint8_t **));
+				for (i = 0; i < p->n_threads; ++i){
+					malloc_vd(&s->V[i], &s->D[i], s->p->opt->ide_ml);
+					if (!s->V[i] || !s->D[i]){ fprintf(stderr, "memory out!"); exit(EXIT_FAILURE);}
+				}
+			}
+
 			return s;
 		} else free(s);
     } else if (step == 1) { // step 1: map
@@ -564,7 +767,12 @@ static void *worker_pipeline(void *shared, int step, void *in)
 		void *km = 0;
         step_t *s = (step_t*)in;
 		const mm_idx_t *mi = p->mi;
-		for (i = 0; i < p->n_threads; ++i) mm_tbuf_destroy(s->buf[i]);
+		
+		for (i = 0; i < p->n_threads; ++i) {
+			mm_tbuf_destroy(s->buf[i]);
+			if (s->V){destory_vd(s->V[i], s->D[i]);}
+		}
+		if (s->V){free(s->V); free(s->D);}
 		free(s->buf);
 		if ((p->opt->flag & MM_F_OUT_CS) && !(mm_dbg_flag & MM_DBG_NO_KALLOC)) km = km_init();
 		for (k = 0; k < s->n_frag; ++k) {

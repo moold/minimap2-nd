@@ -50,8 +50,11 @@ minimap2:main.o libminimap2.a
 minimap2-lite:example.o libminimap2.a
 		$(CC) $(CFLAGS) $< -o $@ -L. -lminimap2 $(LIBS)
 
-libminimap2.a:$(OBJS)
-		$(AR) -csru $@ $(OBJS)
+align1.o:
+	$(CC) -c $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $< -o $@ ../NextDenovo-Pro/lib/align.c
+
+libminimap2.a:$(OBJS) align1.o
+		$(AR) -csru $@ $^
 
 sdust:sdust.c kalloc.o kalloc.h kdq.h kvec.h kseq.h ketopt.h sdust.h
 		$(CC) -D_SDUST_MAIN $(CFLAGS) $< kalloc.o -o $@ -lz

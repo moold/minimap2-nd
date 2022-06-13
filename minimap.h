@@ -181,6 +181,9 @@ typedef struct {
 	int n_threads;
 	int py_mode;
 	char *out;
+
+	float ext;
+	int ide_ml;
 } mm_mapopt_t;
 
 // index reader

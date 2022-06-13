@@ -86,6 +86,8 @@ static ko_longopt_t long_options[] = {
 	{ "mask-level",     ko_required_argument, 'M' },
 	{ "min-dp-score",   ko_required_argument, 's' },
 	{ "sam",            ko_no_argument,       'a' },
+
+	{"ext",             ko_required_argument, 400 },
 	{ 0, 0, 0 }
 };
 
@@ -154,6 +156,8 @@ int main(int argc, char *argv[])
 
 	while ((c = ketopt(&o, argc, argv, 1, opt_str, long_options)) >= 0) {
 		if (c == 'w') ipt.w = atoi(o.arg);
+		else if (c == 400) opt.ext = atof(o.arg);
+
 		else if (c == 'k') ipt.k = atoi(o.arg);
 		else if (c == 'H') ipt.flag |= MM_I_HPC;
 		else if (c == 'd') fnw = o.arg; // the above are indexing related options, except -I
@@ -306,7 +310,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "[ERROR]\033[1;31m --splice and --frag should not be specified at the same time.\033[0m\n");
 		return 1;
 	}
-	if (!fnw && !(opt.flag&MM_F_CIGAR))
+	if (opt.ext <= 0 && !fnw && !(opt.flag&MM_F_CIGAR))
 		ipt.flag |= MM_I_NO_SEQ;
 	if (mm_check_opt(&ipt, &opt) < 0)
 		return 1;
@@ -318,6 +322,8 @@ int main(int argc, char *argv[])
 	if (argc == o.ind || fp_help == stdout) {
 		fprintf(fp_help, "Usage: minimap2 [options] <target.fa>|<target.idx> [query.fa] [...]\n");
 		fprintf(fp_help, "Options:\n");
+		fprintf(fp_help, "  NEW:\n");
+		fprintf(fp_help, "    --ext FLOAT  extend factor [%.2f]\n",  opt.ext);
 		fprintf(fp_help, "  Indexing:\n");
 		fprintf(fp_help, "    -H           use homopolymer-compressed k-mer (preferrable for PacBio)\n");
 		fprintf(fp_help, "    -k INT       k-mer size (no larger than 128) [%d]\n", ipt.k);

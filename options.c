@@ -63,6 +63,9 @@ void mm_mapopt_init(mm_mapopt_t *opt)
 	opt->pe_bonus = 33;
 
 	opt->n_threads = 3;
+
+	opt->ext = .0;
+	opt->ide_ml = 6000;
 }
 
 void mm_mapopt_update(mm_mapopt_t *opt, const mm_idx_t *mi)
